@@ -14,10 +14,8 @@ data "google_compute_subnetwork" "subnetwork" {
 }
 
 module "palo_alto_usc1_11" {
-  # source  = "r-teller/appliance-paloalto/google"
-  # version = "0.9.0-beta"
-
-  source = "../../."
+  source  = "r-teller/appliance-paloalto/google"
+  version = "0.9.0-beta"
 
   project             = var.project_id
   firewall_name       = "palo-alto-usc1-11"
