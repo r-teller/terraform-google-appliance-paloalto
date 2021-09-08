@@ -1,48 +1,128 @@
+locals {
+  bootstrap_enabled = 0 < length(setintersection(["all", "bootstrap"], var.deployment_mode)) ? 1 : 0
+  vm_enabled        = 0 < length(setintersection(["all", "vm"], var.deployment_mode)) ? 1 : 0
+
+  _palo_config = [for key, interface in var.interfaces : {
+    network_name      = substr(interface.network, 0, 31) // network name is used for zone and max length is 31 char
+    ipv4_address      = google_compute_address.internal_address[key].address
+    ipv4_subnet_mask  = "/${split("/", data.google_compute_subnetwork.subnetwork[key].ip_cidr_range)[1]}"
+    ipv4_loadbalancer = interface.loadbalancerAddress
+  } if(var.mgmt_interface_swap && tonumber(key) != 1 || !var.mgmt_interface_swap && tonumber(key) != 0)]
+
+  palo_config = [for i in range(length(local._palo_config)) : merge({ name : "ethernet1/${i + 1}" }, local._palo_config[i])]
+
+  op_command_modes = var.mgmt_interface_swap ? "mgmt-interface-swap" : ""
+
+  service_account = var.service_account != null ? var.service_account : data.google_compute_default_service_account.compute_default_service_account.email
+}
+
+data "google_compute_default_service_account" "compute_default_service_account" {
+  project = var.project
+}
+
+# https://registry.terraform.io/providers/hashicorp/google/latest/docs/data-sources/compute_subnetwork
+data "google_compute_subnetwork" "subnetwork" {
+  for_each = var.interfaces
+
+  name    = each.value.subnetwork
+  project = var.project
+  region  = var.region
+}
+
+resource "tls_private_key" "default" {
+  count     = var.ssh_key == null && var.create_private_key ? 1 : 0
+  algorithm = "RSA"
+  rsa_bits  = 2048
+}
+
+resource "local_file" "private_key" {
+  count    = var.ssh_key == null && var.create_private_key && var.write_private_key_to_file ? 1 : 0
+  content  = tls_private_key.default[0].private_key_pem
+  filename = "./private.key"
+}
+
 resource "google_storage_bucket" "bucket" {
+  count                       = local.bootstrap_enabled
   name                        = "${var.project}-${var.zone}-${var.firewall_name}"
   project                     = var.project
   location                    = var.region
-  storage_class               = "NEARLINE"
-  uniform_bucket_level_access = true
+  storage_class               = "REGIONAL"
+  uniform_bucket_level_access = false // uniform bucket access has to be disabled for this bucket or Palo VM will not be able to bootstrap
 }
 
 resource "google_storage_bucket_object" "config" {
-  name   = "config/"
+  count   = local.bootstrap_enabled
+  name    = "config/"
   content = "..."
-  bucket = google_storage_bucket.bucket.name
+  bucket  = google_storage_bucket.bucket[0].name
   depends_on = [
     google_storage_bucket.bucket
   ]
+}
 
+# https://docs.paloaltonetworks.com/vm-series/9-0/vm-series-deployment/bootstrap-the-vm-series-firewall/create-the-init-cfgtxt-file/sample-init-cfgtxt-file.html#id114bde92-3176-4c7c-a68a-eadfff80cb29
+resource "google_storage_bucket_object" "bootstrap" {
+  count = local.bootstrap_enabled
+  name  = "config/bootstrap.xml"
+  content = templatefile("${path.module}/bootstrap.tmpl",
+    {
+      "interfaces" : local.palo_config,
+      "lb_config" : [for x in local.palo_config : x if x.ipv4_loadbalancer != null]
+    }
+  )
+  bucket = google_storage_bucket.bucket[0].name
+}
+
+# https://docs.paloaltonetworks.com/vm-series/9-0/vm-series-deployment/bootstrap-the-vm-series-firewall/create-the-init-cfgtxt-file/sample-init-cfgtxt-file.html#id114bde92-3176-4c7c-a68a-eadfff80cb29
+resource "google_storage_bucket_object" "init_cfg" {
+  count = local.bootstrap_enabled
+  name  = "config/init-cfg.txt"
+  content = templatefile("${path.module}/init-cfg.tmpl",
+    {
+      "op-command-modes" : local.op_command_modes,
+    }
+  )
+  bucket = google_storage_bucket.bucket[0].name
 }
 
 resource "google_storage_bucket_object" "content" {
-  name   = "content/"
+  count   = local.bootstrap_enabled
+  name    = "content/"
   content = "..."
-  bucket = google_storage_bucket.bucket.name
+  bucket  = google_storage_bucket.bucket[0].name
   depends_on = [
     google_storage_bucket.bucket
   ]
 }
 
 resource "google_storage_bucket_object" "software" {
-  name   = "software/"
+  count   = local.bootstrap_enabled
+  name    = "software/"
   content = "..."
-  bucket = google_storage_bucket.bucket.name
+  bucket  = google_storage_bucket.bucket[0].name
   depends_on = [
     google_storage_bucket.bucket
   ]
-
 }
 
 resource "google_storage_bucket_object" "pulgins" {
-  name   = "pulgins/"
+  count   = local.bootstrap_enabled
+  name    = "pulgins/"
   content = "..."
-  bucket = google_storage_bucket.bucket.name
+  bucket  = google_storage_bucket.bucket[0].name
   depends_on = [
     google_storage_bucket.bucket
   ]
+}
 
+resource "google_storage_bucket_object" "license" {
+  count   = local.bootstrap_enabled
+  name    = "license/"
+  content = "..."
+  bucket  = google_storage_bucket.bucket[0].name
+  depends_on = [
+    google_storage_bucket.bucket
+  ]
 }
 
 resource "google_compute_address" "external_address" {
@@ -67,7 +147,7 @@ resource "google_compute_address" "internal_address" {
 }
 
 resource "google_compute_instance" "firewall" {
-  count                     = var.bootstrap_files_staged ? 1 : 0
+  count                     = local.vm_enabled
   name                      = var.firewall_name
   project                   = var.project
   machine_type              = var.machine_type
@@ -75,18 +155,17 @@ resource "google_compute_instance" "firewall" {
   deletion_protection       = var.deletion_protection
   can_ip_forward            = true
   allow_stopping_for_update = true
-  tags                      = concat(["ngfw"], var.tags)
+  tags                      = var.tags
 
   metadata = {
-    mgmt-interface-swap                  = var.mgmt_interface_swap
-    vmseries-bootstrap-gce-storagebucket = google_storage_bucket.bucket.name
-    allow_stopping_for_update            = true
+    vmseries-bootstrap-gce-storagebucket = 0 < local.bootstrap_enabled ? google_storage_bucket.bucket[0].name : ""
     serial-port-enable                   = true
     block-project-ssh-keys               = var.block_project_ssh_keys
-    ssh-keys                             = "admin:${var.ssh_key}"
+    ssh-keys                             = var.ssh_key != null ? "admin:${var.ssh_key}" : "admin:${tls_private_key.default[0].public_key_openssh}"
   }
 
   service_account {
+    email  = local.service_account
     scopes = var.scopes
   }
 
@@ -94,7 +173,7 @@ resource "google_compute_instance" "firewall" {
     for_each = var.interfaces
     content {
       network_ip = network_interface.value.internalAddress
-      subnetwork = network_interface.value.subnetwork
+      subnetwork = data.google_compute_subnetwork.subnetwork[network_interface.key].id
       dynamic "access_config" {
         for_each = network_interface.value.externalEnabled ? [1] : []
         content {
@@ -112,4 +191,9 @@ resource "google_compute_instance" "firewall" {
       type  = "pd-ssd"
     }
   }
+
+  depends_on = [
+    google_storage_bucket_object.init_cfg,
+    google_storage_bucket_object.bootstrap,
+  ]
 }

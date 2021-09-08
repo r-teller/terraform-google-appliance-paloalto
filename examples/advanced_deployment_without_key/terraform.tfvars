@@ -1,0 +1,2 @@
+project_id = "rteller-demo-host-aaaa"
+networks   = ["ngfw-poc-prod-vpc-dmz-global", "ngfw-poc-prod-vpc-inside-global", "ngfw-poc-prod-vpc-interconnect", "ngfw-poc-prod-vpc-mgmt-global", "ngfw-poc-prod-vpc-outside-global"]

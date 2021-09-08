@@ -15,35 +15,72 @@ variable "firewall_name" {
   type = string
 }
 
-variable "bootstrap_files_staged" {
-  type = bool
+variable "service_account" {
+  type    = string
+  default = null
 }
+
+variable "create_private_key" {
+  type    = bool
+  default = false
+}
+
+variable "write_private_key_to_file" {
+  type    = bool
+  default = false
+}
+
 variable "ssh_key" {
-  type = string
+  type    = string
+  default = null
 }
 variable "block_project_ssh_keys" {
   type    = bool
   default = true
 }
 variable "mgmt_interface_swap" {
-  type    = string
-  default = "enable"
+  type    = bool
+  default = true
+}
+
+variable "deployment_mode" {
+  type    = list(string)
+  default = ["all"]
+  validation {
+    condition     = !(can(index([for key in var.deployment_mode : contains(["all", "bootstrap", "vm"], key)], false)))
+    error_message = "One or more strings in Var.deployment_mode is not supported, supported strings are [all,boostratp,vm]."
+  }
 }
 
 variable "interfaces" {
   type = map(object({
-      network = string,
-      subnetwork = string,
-      internalAddress = string,
-      externalEnabled = bool,
+    externalEnabled     = bool,
+    network             = string,
+    subnetwork          = string,
+    internalAddress     = string,
+    loadbalancerAddress = string,
     })
   )
   validation {
+    condition     = length(var.interfaces) >= 2 && length(var.interfaces) <= 8
+    error_message = "Var.interfaces must contain between 2 and 8 interfaces."
+  }
+  validation {
     # Checks to see if any of the keys in the interface map are non-numbers
-    condition = (      
-      !(can(index([for key in keys(var.interfaces): can(tonumber(key)) ], false)))
+    condition = (
+      !(can(index([for key in keys(var.interfaces) : can(tonumber(key))], false)))
     )
     error_message = "One or more keys in var.interfaces is not a number."
+  }
+  validation {
+    # Checks to make sure the internal address is a properly formated IP == 192.168.0.1
+    condition     = !(can(index([for interface in var.interfaces : can(cidrhost("${interface.internalAddress}/32", 0)) || interface.internalAddress == null], false)))
+    error_message = "One or more internalAddresses in var.interfaces is not properly formatted. Expected format is a specific IP Addresses or null."
+  }
+  validation {
+    # Checks to make sure the internal address is a properly formated IP == 192.168.0.1
+    condition     = !(can(index([for interface in var.interfaces : can(cidrhost("${interface.loadbalancerAddress}/32", 0)) || interface.loadbalancerAddress == null], false)))
+    error_message = "One or more loadbalancerAddresses in var.interfaces is not properly formatted. Expected format is a specific IP Addresses or null."
   }
 }
 
@@ -68,10 +105,15 @@ variable "scopes" {
     "https://www.googleapis.com/auth/devstorage.read_only",
     "https://www.googleapis.com/auth/logging.write",
     "https://www.googleapis.com/auth/monitoring.write",
-    "https://www.googleapis.com/auth/cloud-platform",
+    "https://www.googleapis.com/auth/cloud.useraccounts.readonly",
   ]
 }
 
 variable "image" {
+  // Hourly Licenses
   default = "https://www.googleapis.com/compute/v1/projects/paloaltonetworksgcp-public/global/images/vmseries-bundle1-909"
+  # default = "https://www.googleapis.com/compute/v1/projects/paloaltonetworksgcp-public/global/images/vmseries-bundle2-909"
+
+  // BYOL License  
+  # default = "https://www.googleapis.com/compute/v1/projects/paloaltonetworksgcp-public/global/images/vmseries-byol-909"
 }
