@@ -38,7 +38,7 @@ resource "tls_private_key" "default" {
 resource "local_file" "private_key" {
   count    = var.ssh_key == null && var.create_private_key && var.write_private_key_to_file ? 1 : 0
   content  = tls_private_key.default[0].private_key_pem
-  filename = "./private.key"
+  filename = "./${var.firewall_name}.key"
 }
 
 resource "google_storage_bucket" "bucket" {

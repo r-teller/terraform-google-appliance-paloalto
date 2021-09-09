@@ -7,7 +7,7 @@ module "palo_alto_usc1_31" {
   region              = "us-central1"
   zone                = "us-central1-a"
   tags                = ["us-central1", "us-central1-a", "allow-gcp-iap", "allow-all-rfc1918", "allow-gcp-gfe", "ngfw"]
-  deployment_mode     = ["bootstrap", "vm"]
+  deployment_mode     = ["bootstrap"]
   ssh_key             = file("./ssh_key.pub")
   mgmt_interface_swap = true
 

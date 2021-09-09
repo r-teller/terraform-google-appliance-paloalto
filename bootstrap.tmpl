@@ -318,7 +318,7 @@
                     <application-group/>
                     <zone tag="Children_added_by_terraform">
 %{ for interface in interfaces ~}
-                        <entry name="${interface.network_name}" tag="Managed_by_terraform">
+                        <entry name="${interface.network_name}" tag="Managed_by_terraform" uuid="${uuid()}">
                             <network>
                                 <layer3>
                                 <member>${interface.name}</member>
@@ -333,7 +333,7 @@
                     <rulebase>
                         <security>
                             <rules>
-                                <entry name="GCP_HealthChecks">
+                                <entry name="GCP_HealthChecks" uuid="${uuid()}">
                                     <to>
                                         <member>any</member>
                                     </to>
@@ -368,7 +368,7 @@
                         </security>
                         <pbf>
                             <rules>
-                                <entry name="PBF-HealthChecks">
+                                <entry name="PBF-HealthChecks"  uuid="${uuid()}">
                                     <action>
                                         <no-pbf/>
                                     </action>
@@ -404,7 +404,7 @@
                         <nat>
                             <rules tag="Children_added_by_terraform">
 %{ for interface in lb_config ~}
-                                <entry name="lb-nat-${interface.network_name}">
+                                <entry name="lb-nat-${interface.network_name}" uuid="${uuid()}">
                                     <destination-translation>
                                         <translated-address>${interface.ipv4_loadbalancer}</translated-address>
                                     </destination-translation>
@@ -419,7 +419,7 @@
                                         <member>130.211.0.0/22</member>
                                     </source>
                                     <destination>
-                                        <member>${interface.ipv4_loadbalancer}</member>
+                                        <member>${interface.ipv4_address}</member>
                                     </destination>
                                     <service>any</service>
                                 </entry>
