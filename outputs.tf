@@ -25,3 +25,7 @@ output "palo_config" {
 output "api_key" {
   value = "PandasAreAwesome"
 }
+
+output "interfaces" {
+  value = var.interfaces
+}

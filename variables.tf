@@ -48,7 +48,7 @@ variable "deployment_mode" {
   default = ["all"]
   validation {
     condition     = !(can(index([for key in var.deployment_mode : contains(["all", "bootstrap", "vm"], key)], false)))
-    error_message = "One or more strings in Var.deployment_mode is not supported, supported strings are [all,boostratp,vm]."
+    error_message = "One or more strings in Var.deployment_mode is not supported, supported strings are [all, boostratp, vm]."
   }
 }
 
@@ -59,6 +59,10 @@ variable "interfaces" {
     subnetwork          = string,
     internalAddress     = string,
     loadbalancerAddress = string,
+    staticRoutes = list(object({
+      name             = string
+      destinationRange = string
+    })),
     })
   )
   validation {
@@ -67,20 +71,26 @@ variable "interfaces" {
   }
   validation {
     # Checks to see if any of the keys in the interface map are non-numbers
-    condition = (
-      !(can(index([for key in keys(var.interfaces) : can(tonumber(key))], false)))
-    )
-    error_message = "One or more keys in var.interfaces is not a number."
+    # condition = (
+    #   !(can(index([for key in keys(var.interfaces) : can(tonumber(key))], false)))
+    # )
+    condition     = alltrue([for key in keys(var.interfaces) : contains(range(0, length(var.interfaces)), tonumber(key))])
+    error_message = "One or more keys in var.interfaces is outside of the allocated interface range."
   }
   validation {
     # Checks to make sure the internal address is a properly formated IP == 192.168.0.1
-    condition     = !(can(index([for interface in var.interfaces : can(cidrhost("${interface.internalAddress}/32", 0)) || interface.internalAddress == null], false)))
+    condition     = alltrue([for interface in var.interfaces : can(cidrhost("${interface.internalAddress}/32", 0)) || interface.internalAddress == null])
     error_message = "One or more internalAddresses in var.interfaces is not properly formatted. Expected format is a specific IP Addresses or null."
   }
   validation {
     # Checks to make sure the internal address is a properly formated IP == 192.168.0.1
-    condition     = !(can(index([for interface in var.interfaces : can(cidrhost("${interface.loadbalancerAddress}/32", 0)) || interface.loadbalancerAddress == null], false)))
+    condition     = alltrue([for interface in var.interfaces : can(cidrhost("${interface.loadbalancerAddress}/32", 0)) || interface.loadbalancerAddress == null])
     error_message = "One or more loadbalancerAddresses in var.interfaces is not properly formatted. Expected format is a specific IP Addresses or null."
+  }
+  validation {
+    # Checks to make sure destinationRanges in sattic routes are properly formated, expecation i
+    condition     = alltrue(flatten([for interface in var.interfaces : [for staticRoute in interface.staticRoutes : can(cidrsubnet(staticRoute.destinationRange, 0, 0))]]))
+    error_message = "One or more staticRoutes destinationRanges in var.interfaces is not properly formatted. Expected format for destinationRange ip_addr/mask."
   }
 }
 

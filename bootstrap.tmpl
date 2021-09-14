@@ -269,9 +269,36 @@
                         </protocol>
                         <interface tag="Children_added_by_terraform">
 %{ for interface in interfaces ~}
-                            <member tag="Managed_by_terraform">${interface.name}</member>
+                            <member>${interface.name}</member>
 %{ endfor ~}
                         </interface>
+                        <routing-table>
+                            <ip>
+                                <static-route>%{ for interface in interfaces ~}%{ for static_route in interface.static_routes}
+                                    <entry name="${static_route.name}">
+                                        <nexthop>
+                                            <ip-address>${interface.ipv4_gateway}</ip-address>
+                                        </nexthop>
+                                        <bfd>
+                                            <profile>None</profile>
+                                        </bfd>
+                                        <path-monitor>
+                                            <enable>no</enable>
+                                            <failure-condition>any</failure-condition>
+                                            <hold-time>2</hold-time>
+                                        </path-monitor>
+                                        <interface>${interface.name}</interface>
+                                        <metric>10</metric>
+                                        <destination>${static_route.destinationRange}</destination>
+                                        <route-table>
+                                            <unicast/>
+                                        </route-table>
+                                    </entry>%{ endfor ~}
+%{ endfor ~}
+
+                                </static-route>
+                            </ip>
+                        </routing-table>
                     </entry>
                 </virtual-router>
             </network>
@@ -281,7 +308,7 @@
                         <dhcp-client>
                             <send-hostname>yes</send-hostname>
                             <send-client-id>no</send-client-id>
-                            <accept-dhcp-hostname>no</accept-dhcp-hostname>
+                            <accept-dhcp-hostname>yes</accept-dhcp-hostname>
                             <accept-dhcp-domain>no</accept-dhcp-domain>
                         </dhcp-client>
                     </type>
@@ -332,7 +359,7 @@
                     <schedule/>
                     <rulebase>
                         <security>
-                            <rules>
+                            <rules>%{if 0 < length(lb_config)}
                                 <entry name="GCP_HealthChecks" uuid="${uuid()}">
                                     <to>
                                         <member>any</member>
@@ -363,19 +390,19 @@
                                         <member>any</member>
                                     </hip-profiles>
                                     <action>allow</action>
-                                </entry>
+                                </entry>%{ endif }
                             </rules>
                         </security>
                         <pbf>
-                            <rules>
+                            <rules>%{if 0 < length(lb_config)}
                                 <entry name="PBF-HealthChecks"  uuid="${uuid()}">
                                     <action>
                                         <no-pbf/>
                                     </action>
                                     <from>
                                         <interface tag="Children_added_by_terraform">
-%{ for interface in interfaces ~}
-                                            <member tag="Managed_by_terraform">${interface.name}</member>
+%{ for interface in lb_config ~}
+                                            <member>${interface.name}</member>
 %{ endfor ~}
                                         </interface>
                                     </from>
@@ -398,7 +425,7 @@
                                     <source-user>
                                         <member>any</member>
                                     </source-user>                                    
-                                </entry>
+                                </entry>%{ endif }
                             </rules>
                         </pbf>
                         <nat>
@@ -406,7 +433,7 @@
 %{ for interface in lb_config ~}
                                 <entry name="lb-nat-${interface.network_name}" uuid="${uuid()}">
                                     <destination-translation>
-                                        <translated-address>${interface.ipv4_loadbalancer}</translated-address>
+                                        <translated-address>${interface.ipv4_address}</translated-address>
                                     </destination-translation>
                                     <to>
                                         <member>${interface.network_name}</member>
@@ -419,7 +446,7 @@
                                         <member>130.211.0.0/22</member>
                                     </source>
                                     <destination>
-                                        <member>${interface.ipv4_address}</member>
+                                        <member>${interface.ipv4_loadbalancer}</member>
                                     </destination>
                                     <service>any</service>
                                 </entry>

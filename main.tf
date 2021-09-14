@@ -2,16 +2,20 @@ locals {
   bootstrap_enabled = 0 < length(setintersection(["all", "bootstrap"], var.deployment_mode)) ? 1 : 0
   vm_enabled        = 0 < length(setintersection(["all", "vm"], var.deployment_mode)) ? 1 : 0
 
+  # This configuration is only used if bootstrap_enabled
   _palo_config = [for key, interface in var.interfaces : {
     network_name      = substr(interface.network, 0, 31) // network name is used for zone and max length is 31 char
-    ipv4_address      = google_compute_address.internal_address[key].address
     ipv4_subnet_mask  = "/${split("/", data.google_compute_subnetwork.subnetwork[key].ip_cidr_range)[1]}"
+    ipv4_gateway      = cidrhost(data.google_compute_subnetwork.subnetwork[key].ip_cidr_range, 1)
+    ipv4_address      = google_compute_address.internal_address[key].address
     ipv4_loadbalancer = interface.loadbalancerAddress
-  } if(var.mgmt_interface_swap && tonumber(key) != 1 || !var.mgmt_interface_swap && tonumber(key) != 0)]
+    static_routes     = interface.staticRoutes
+  } if(var.mgmt_interface_swap && tonumber(key) != 1 || !(var.mgmt_interface_swap && tonumber(key) != 0))]
 
   palo_config = [for i in range(length(local._palo_config)) : merge({ name : "ethernet1/${i + 1}" }, local._palo_config[i])]
 
-  op_command_modes = var.mgmt_interface_swap ? "mgmt-interface-swap" : ""
+  mgmt_interface_swap = var.mgmt_interface_swap && local.bootstrap_enabled == 0 ? "enable" : null
+  op_command_modes    = var.mgmt_interface_swap ? "mgmt-interface-swap" : ""
 
   service_account = var.service_account != null ? var.service_account : data.google_compute_default_service_account.compute_default_service_account.email
 }
@@ -71,6 +75,18 @@ resource "google_storage_bucket_object" "bootstrap" {
     }
   )
   bucket = google_storage_bucket.bucket[0].name
+}
+
+
+resource "local_file" "bootstrap_xml" {
+  count    = local.bootstrap_enabled
+  filename = "bootstrap.xml"
+  content = templatefile("${path.module}/bootstrap.tmpl",
+    {
+      "interfaces" : local.palo_config,
+      "lb_config" : [for x in local.palo_config : x if x.ipv4_loadbalancer != null]
+    }
+  )
 }
 
 # https://docs.paloaltonetworks.com/vm-series/9-0/vm-series-deployment/bootstrap-the-vm-series-firewall/create-the-init-cfgtxt-file/sample-init-cfgtxt-file.html#id114bde92-3176-4c7c-a68a-eadfff80cb29
@@ -158,7 +174,8 @@ resource "google_compute_instance" "firewall" {
   tags                      = var.tags
 
   metadata = {
-    vmseries-bootstrap-gce-storagebucket = 0 < local.bootstrap_enabled ? google_storage_bucket.bucket[0].name : ""
+    vmseries-bootstrap-gce-storagebucket = 0 < local.bootstrap_enabled ? google_storage_bucket.bucket[0].name : null
+    mgmt-interface-swap                  = local.mgmt_interface_swap
     serial-port-enable                   = true
     block-project-ssh-keys               = var.block_project_ssh_keys
     ssh-keys                             = var.ssh_key != null ? "admin:${var.ssh_key}" : "admin:${tls_private_key.default[0].public_key_openssh}"

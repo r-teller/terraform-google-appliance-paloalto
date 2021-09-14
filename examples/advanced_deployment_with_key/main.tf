@@ -61,7 +61,7 @@ module "palo_alto_usc1_11" {
 
 module "palo_alto_usc1_12" {
   source  = "r-teller/appliance-paloalto/google"
-  version = "0.9.0-beta"
+  version = "~> 0.10.0"
 
   project             = var.project_id
   firewall_name       = "palo-alto-usc1-12"
