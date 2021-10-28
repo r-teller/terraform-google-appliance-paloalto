@@ -17,7 +17,7 @@ terraform init
 You will find various examples that can be deployed in the `examples/` directory. 
 Start of by updating `project_id` in the example directory of your choice.
 
-Plug in your networks into `examples/$example_dir/main.tf` or create new networks according to that file:
+Plug in your networks into `examples/$example_dir/main.tf` in the `interfaces` map. Alternatively you can create new networks according to that file. 
 
 ```
 # VPC networks
@@ -52,6 +52,8 @@ gcloud compute networks subnets create ngfw-poc-prod-dmz-global-subnet-192-168-0
     --range=192.168.0.0/24 \
     --region=us-central1
 ```
+
+Note that you will need to update `main.tf` if you create less or more VPC networks than the standard four. Creating networks after they have been deployed will require redeployment of the compute instance that runs the Palo Alto appliance.
 
 Update the SSH public key in `ssh_key.pub` to your SSH public key. This key will be used for logging into the Palo Alto appliances.
 
